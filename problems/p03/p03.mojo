@@ -16,6 +16,8 @@ fn add_10_guard(
     size: UInt,
 ):
     i = thread_idx.x
+    if i < size:
+        output[i] = a[i] + 10
     # FILL ME IN (roughly 2 lines)
 
 
