@@ -27,6 +27,35 @@ fn conv_1d_simple[
     global_i = block_dim.x * block_idx.x + thread_idx.x
     local_i = Int(thread_idx.x)
     # FILL ME IN (roughly 14 lines)
+    shared_a = LayoutTensor[
+        dtype,
+        Layout.row_major(SIZE),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+
+    shared_b = LayoutTensor[
+        dtype,
+        Layout.row_major(CONV),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+
+    if global_i < SIZE:
+        shared_a[local_i] = a[global_i]
+
+        if global_i < CONV:
+            shared_b[local_i] = b[global_i]
+
+        barrier()
+
+        var sum: a.element_type = 0
+        for j in range(0, CONV):
+            if local_i + j < SIZE:
+                sum += shared_a[local_i + j] * shared_b[j]
+        # barrier()
+
+        output[global_i] = sum
 
 
 # ANCHOR_END: conv_1d_simple
@@ -34,6 +63,7 @@ fn conv_1d_simple[
 # ANCHOR: conv_1d_block_boundary
 comptime SIZE_2 = 15
 comptime CONV_2 = 4
+comptime TILE_SIZE_2 = TPB + CONV_2 - 1
 comptime BLOCKS_PER_GRID_2 = (2, 1)
 comptime THREADS_PER_BLOCK_2 = (TPB, 1)
 comptime in_2_layout = Layout.row_major(SIZE_2)
@@ -51,6 +81,38 @@ fn conv_1d_block_boundary[
     global_i = Int(block_dim.x * block_idx.x + thread_idx.x)
     local_i = Int(thread_idx.x)
     # FILL ME IN (roughly 18 lines)
+
+    shared_a = LayoutTensor[
+        dtype,
+        Layout.row_major(TILE_SIZE_2),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+
+    shared_b = LayoutTensor[
+        dtype,
+        Layout.row_major(CONV_2),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+
+    if global_i < SIZE_2:
+        shared_a[local_i] = a[global_i]
+
+        # last thread fills in "halo" as well
+        if local_i == TPB - 1:
+            for j in range(1, CONV_2):
+                shared_a[local_i + j] = a[global_i + j]
+
+        barrier()
+
+        var sum: a.element_type = 0
+
+        for j in range(0, CONV_2):
+            if global_i + j < SIZE_2:
+                sum += shared_a[local_i + j] * b[j]
+
+        output[global_i] = sum
 
 
 # ANCHOR_END: conv_1d_block_boundary
