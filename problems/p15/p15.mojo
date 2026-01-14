@@ -29,6 +29,26 @@ fn axis_sum[
     local_i = thread_idx.x
     batch = block_idx.y
     # FILL ME IN (roughly 15 lines)
+    shared = LayoutTensor[
+        dtype,
+        Layout.row_major(SIZE),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+
+    if local_i < SIZE:
+        shared[local_i] = a[batch, local_i]
+        barrier()
+
+        var stride = UInt(1)
+        while stride < SIZE:
+            if local_i % stride == 0 and local_i + stride < SIZE:
+                shared[local_i] += shared[local_i + stride]
+            stride *= 2
+            barrier()
+
+    if local_i == 0:
+        output[batch, 0] = shared[0]
 
 
 # ANCHOR_END: axis_sum
