@@ -27,6 +27,12 @@ fn naive_matmul[
     col = block_dim.x * block_idx.x + thread_idx.x
     # FILL ME IN (roughly 6 lines)
 
+    if row < size and col < size:
+        var sum: output.element_type = 0
+        for i in range(0, size):
+            sum += a[row, i] * b[i, col]
+        output[row, col] = sum
+
 
 # ANCHOR_END: naive_matmul
 
@@ -44,6 +50,32 @@ fn single_block_matmul[
     local_row = thread_idx.y
     local_col = thread_idx.x
     # FILL ME IN (roughly 12 lines)
+
+    shared_a = LayoutTensor[
+        dtype,
+        Layout.row_major(SIZE, SIZE),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+
+    shared_b = LayoutTensor[
+        dtype,
+        Layout.row_major(SIZE, SIZE),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+
+    if row < size and col < size:
+        shared_a[local_row, local_col] = a[row, col]
+        shared_b[local_row, local_col] = b[row, col]
+        barrier()
+
+        var sum: output.element_type = 0
+        for i in range(0, size):
+            sum += shared_a[local_row, i] * shared_b[i, local_col]
+        barrier()
+
+        output[row, col] = sum
 
 
 # ANCHOR_END: single_block_matmul
@@ -64,9 +96,38 @@ fn matmul_tiled[
 ):
     local_row = thread_idx.y
     local_col = thread_idx.x
-    tiled_row = block_idx.y * TPB + thread_idx.y
-    tiled_col = block_idx.x * TPB + thread_idx.x
+    tile_row = block_idx.y * TPB + thread_idx.y
+    tile_col = block_idx.x * TPB + thread_idx.x
     # FILL ME IN (roughly 20 lines)
+
+    shared_a = LayoutTensor[
+        dtype,
+        Layout.row_major(TPB, TPB),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+
+    shared_b = LayoutTensor[
+        dtype,
+        Layout.row_major(TPB, TPB),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+
+    var tile_size = UInt(SIZE_TILED // TPB)
+
+    var sum: output.element_type = 0
+
+    for k_start in range(0, SIZE_TILED, tile_size):
+        shared_a[local_row, local_col] = a[tile_row, UInt(k_start) + local_col]
+        shared_b[local_row, local_col] = b[UInt(k_start) + local_row, tile_col]
+        barrier()
+
+        for i in range(0, tile_size):
+            sum += shared_a[local_row, i] * shared_b[i, local_col]
+        barrier()
+
+    output[tile_row, tile_col] = sum
 
 
 # ANCHOR_END: matmul_tiled
