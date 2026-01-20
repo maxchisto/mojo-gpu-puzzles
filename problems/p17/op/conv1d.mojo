@@ -110,6 +110,16 @@ struct Conv1DCustomOp:
                 ),
                 0,
             )
+            comptime my_kernel = conv1d_kernel[
+                out_layout, in_layout, conv_layout, input_size, conv_size
+            ]
+            gpu_ctx.enqueue_function[my_kernel, my_kernel](
+                output_tensor,
+                input_tensor,
+                kernel_tensor,
+                grid_dim=BLOCKS_PER_GRID,
+                block_dim=TPB,
+            )
 
             # FILL ME IN with 1 line calling our conv1d_kernel
 
