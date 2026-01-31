@@ -33,7 +33,7 @@ def conv1d_pytorch(
     ]
 
     # FILL IN with 1 line of code
-
+    torch.compile(conv1d)(output_tensor, input_tensor, kernel_tensor)
     return output_tensor
 
 
@@ -49,7 +49,8 @@ def conv1d_max_graph_reference(
     Reference implementation using MAX Graph (like p15) for comparison.
     This shows the difference between MAX Graph and PyTorch approaches.
     """
-    from max.driver import CPU, Accelerator, Tensor, accelerator_count
+    from max.driver import CPU, Accelerator, accelerator_count
+    from max.tensor import Tensor
     from max.dtype import DType
     from max.engine import InferenceSession
     from max.graph import DeviceRef, Graph, TensorType, ops
@@ -63,8 +64,8 @@ def conv1d_max_graph_reference(
     session = InferenceSession(devices=[device_obj])
 
     # Convert to MAX Graph tensors
-    input_tensor = Tensor.from_numpy(input_array).to(device_obj)
-    kernel_tensor = Tensor.from_numpy(kernel_array).to(device_obj)
+    input_tensor = Tensor.constant(input_array, dtype=DType.float32, device=device_obj)
+    kernel_tensor = Tensor.constant(kernel_array, dtype=DType.float32, device=device_obj)
 
     # Same graph setup as p15
     with Graph(
@@ -96,8 +97,8 @@ def conv1d_max_graph_reference(
                 )
             ],
             parameters={
-                "input_size": input_tensor.shape[0],
-                "conv_size": kernel_tensor.shape[0],
+                "input_size": int(input_tensor.shape[0]),
+                "conv_size": int(kernel_tensor.shape[0]),
                 "dtype": DType.float32,
             },
         )[0].tensor
