@@ -30,8 +30,8 @@ system-requirements = { macos = "15.0" }
 
 [dependencies]
 python = ">=3.12.12,<3.13"
-mojo = ">=0.26.2.0.dev2026012605,<0.27" # includes `mojo-compiler`, lsp, debugger, formatter etc.
-max = ">=26.2.0.dev2026012605,<27"
+mojo = ">=0.26.2.0.dev2026013005,<0.27" # includes `mojo-compiler`, lsp, debugger, formatter etc.
+max = ">=26.2.0.dev2026013005,<27"
 bash = ">=5.2.37,<6"
 manim = ">=0.19.1,<0.20"
 mdbook = ">=0.5.2,<0.6"
