@@ -79,7 +79,7 @@ def embedding_mojo_3d(
     if indices.dtype != torch.int32:
         indices = indices.to(torch.int32)
 
-    embedding_op = ops.embedding_2d[
+    embedding_op = ops.embedding_3d[
         {
             "batch_size": batch_size,
             "seq_len": seq_len,
@@ -128,10 +128,15 @@ if __name__ == "__main__":
         max_diff_2d = (ref_output - mojo_2d_output).abs().max().item()
         print(f"   2D Non-coalesced - Max difference: {max_diff_2d:.2e}")
 
-        if max_diff_1d < 1e-5 and max_diff_2d < 1e-5:
-            print("   ✅ Both implementations CORRECT")
+        # Test 3D non-coalesced kernel
+        mojo_3d_output = embedding_mojo_3d(indices, weights)
+        max_diff_3d = (ref_output - mojo_3d_output).abs().max().item()
+        print(f"   3D Non-coalesced - Max difference: {max_diff_3d:.2e}")
+
+        if max_diff_1d < 1e-5 and max_diff_2d < 1e-5 and max_diff_3d < 1e-5:
+            print("   ✅ All implementations CORRECT")
         else:
-            print("   ❌ One or both implementations INCORRECT")
+            print("   ❌ One or more implementations INCORRECT")
             exit(1)
 
     except Exception as e:
@@ -139,51 +144,27 @@ if __name__ == "__main__":
         exit(1)
 
     print()
-    print("Benchmarking Mojo Kernels...")
+    print("Running Mojo Built-in Benchmarks...")
+    print("-" * 60)
 
-    # Warmup
-    for _ in range(5):
-        _ = embedding_mojo_1d(indices, weights)
-        _ = embedding_mojo_2d(indices, weights)
-        _ = embedding_mojo_3d(indices, weights)
-
-    torch.cuda.synchronize()
-
-    # Benchmark function
-    def benchmark_fn(fn, *args, num_trials=100):
-        torch.cuda.synchronize()
-        start_time = time.perf_counter()
-
-        for _ in range(num_trials):
-            _ = fn(*args)
-
-        torch.cuda.synchronize()
-        end_time = time.perf_counter()
-
-        avg_time_ms = (end_time - start_time) * 1000 / num_trials
-        return avg_time_ms
-
-    # Benchmark both kernels
-    time_1d = benchmark_fn(embedding_mojo_1d, indices, weights)
-    time_2d = benchmark_fn(embedding_mojo_2d, indices, weights)
-    time_3d = benchmark_fn(embedding_mojo_3d, indices, weights)
-
-    print()
-    print("Performance Results:")
-    print(f"   1D Coalesced:     {time_1d:.3f} ms")
-    print(f"   2D Non-coalesced: {time_2d:.3f} ms")
-    print(f"   3D Non-coalesced: {time_3d:.3f} ms")
-
-    if time_1d < time_2d:
-        speedup = time_2d / time_1d
-        print(f"   1D is {speedup:.2f}x faster than 2D")
-    else:
-        speedup = time_1d / time_2d
-        print(f"   2D is {speedup:.2f}x faster than 1D")
+    import subprocess
+    import sys
+    
+    benchmark_file = Path(__file__).parent / "bench_embedding.mojo"
+    
+    try:
+        # Use 'mojo' from the environment, assuming it is available via pixi
+        subprocess.run(["mojo", str(benchmark_file)], check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"   ❌ Mojo benchmark failed with exit code {e.returncode}")
+        exit(1)
+    except Exception as e:
+        print(f"   ❌ Could not run Mojo benchmark: {e}")
+        exit(1)
 
     print()
     print("Key Learning Points:")
     print("• Compare different GPU kernel implementations")
-    print("• 1D vs 2D grid patterns have different memory access")
+    print("• 1D vs 2D vs 3D grid patterns have different memory access")
     print("• Coalesced memory access should be faster")
     print("• Grid configuration affects GPU utilization")

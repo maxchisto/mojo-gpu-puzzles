@@ -45,17 +45,18 @@ fn embedding_kernel_coalesced[
     batch_remainder = global_idx % (seq_len * embed_dim)
     seq = batch_remainder // embed_dim
     embed = batch_remainder % embed_dim
-    
+
     # Get token index
     # FILL IN 1 line
     token_idx = indices[batch, seq]
-    
+
     # Simple, correct assignment
     # FILL IN 4 lines
-    if token_idx < vocab_size:
+    if token_idx >= 0 and token_idx < vocab_size:
         output[batch, seq, embed] = weights[token_idx, embed]
     else:
         output[batch, seq, embed] = 0
+
 
 # ANCHOR_END: embedding_kernel_coalesced
 
@@ -96,20 +97,21 @@ fn embedding_kernel_2d[
     # FILL IN 2 lines
     batch = batch_seq_idx // seq_len
     seq = batch_seq_idx % seq_len
-    
+
     # Get token index
     # FILL IN 1 line
     token_idx = indices[batch, seq]
-    
+
     # Assignment with 2D grid pattern
     # FILL IN 4 lines
-    if token_idx < vocab_size:
+    if token_idx >= 0 and token_idx < vocab_size:
         output[batch, seq, embed_idx] = weights[token_idx, embed_idx]
     else:
         output[batch, seq, embed_idx] = 0
 
 
 # ANCHOR_END: embedding_kernel_2d
+
 
 fn embedding_kernel_3d[
     indices_layout: Layout,
@@ -143,17 +145,16 @@ fn embedding_kernel_3d[
     if batch >= batch_size or seq >= seq_len or embed >= embed_dim:
         return
 
-       
     token_idx = indices[batch, seq]
-    
+
     # Assignment with 2D grid pattern
     # FILL IN 4 lines
-    if token_idx < vocab_size:
+    if token_idx >= 0 and token_idx < vocab_size:
         output[batch, seq, embed] = weights[token_idx, embed]
     else:
         output[batch, seq, embed] = 0
 
-    
+
 import compiler
 from runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
@@ -329,7 +330,8 @@ struct Embedding2DCustomOp:
                             ]
         else:
             raise Error("Unsupported target: " + target)
-        
+
+
 @compiler.register("embedding_3d")
 struct Embedding3DCustomOp:
     @staticmethod
@@ -376,9 +378,9 @@ struct Embedding3DCustomOp:
 
             # Calculate 2D grid dimensions for non-coalesced access
             # total_positions = batch_size * seq_len
-            comptime BLOCK_X = 16  # batch*seq dimension
-            comptime BLOCK_Y = 16  # seq dimension
-            comptime BLOCK_Z = 16  # embed dimension
+            comptime BLOCK_X = 8  # batch dimension
+            comptime BLOCK_Y = 8  # seq dimension
+            comptime BLOCK_Z = 8  # embed dimension
             blocks_x = max(1, ceildiv(batch_size, BLOCK_X))
             blocks_y = max(1, ceildiv(seq_len, BLOCK_Y))
             blocks_z = max(1, ceildiv(embed_dim, BLOCK_Z))
