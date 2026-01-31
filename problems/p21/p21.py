@@ -63,6 +63,32 @@ def embedding_mojo_2d(
     embedding_op(output, indices, weights)
     return output
 
+def embedding_mojo_3d(
+    indices: torch.Tensor, weights: torch.Tensor
+) -> torch.Tensor:
+    """3D non-coalesced embedding kernel"""
+    batch_size, seq_len = indices.shape
+    vocab_size, embed_dim = weights.shape
+
+    output = torch.empty(
+        (batch_size, seq_len, embed_dim),
+        dtype=weights.dtype,
+        device=weights.device,
+    )
+
+    if indices.dtype != torch.int32:
+        indices = indices.to(torch.int32)
+
+    embedding_op = ops.embedding_2d[
+        {
+            "batch_size": batch_size,
+            "seq_len": seq_len,
+            "vocab_size": vocab_size,
+            "embed_dim": embed_dim,
+        }
+    ]
+    embedding_op(output, indices, weights)
+    return output
 
 if __name__ == "__main__":
     print("Puzzle 21: Mojo Embedding Kernel Comparison")
@@ -119,11 +145,12 @@ if __name__ == "__main__":
     for _ in range(5):
         _ = embedding_mojo_1d(indices, weights)
         _ = embedding_mojo_2d(indices, weights)
+        _ = embedding_mojo_3d(indices, weights)
 
     torch.cuda.synchronize()
 
     # Benchmark function
-    def benchmark_fn(fn, *args, num_trials=10):
+    def benchmark_fn(fn, *args, num_trials=100):
         torch.cuda.synchronize()
         start_time = time.perf_counter()
 
@@ -139,11 +166,13 @@ if __name__ == "__main__":
     # Benchmark both kernels
     time_1d = benchmark_fn(embedding_mojo_1d, indices, weights)
     time_2d = benchmark_fn(embedding_mojo_2d, indices, weights)
+    time_3d = benchmark_fn(embedding_mojo_3d, indices, weights)
 
     print()
     print("Performance Results:")
     print(f"   1D Coalesced:     {time_1d:.3f} ms")
     print(f"   2D Non-coalesced: {time_2d:.3f} ms")
+    print(f"   3D Non-coalesced: {time_3d:.3f} ms")
 
     if time_1d < time_2d:
         speedup = time_2d / time_1d

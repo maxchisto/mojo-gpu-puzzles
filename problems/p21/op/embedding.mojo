@@ -111,6 +111,49 @@ fn embedding_kernel_2d[
 
 # ANCHOR_END: embedding_kernel_2d
 
+fn embedding_kernel_3d[
+    indices_layout: Layout,
+    weights_layout: Layout,
+    out_layout: Layout,
+    batch_size: Int,
+    seq_len: Int,
+    vocab_size: Int,
+    embed_dim: Int,
+    dtype: DType = DType.float32,
+](
+    output: LayoutTensor[dtype, out_layout, MutAnyOrigin],
+    indices: LayoutTensor[DType.int32, indices_layout, MutAnyOrigin],
+    weights: LayoutTensor[dtype, weights_layout, MutAnyOrigin],
+):
+    """
+    2D grid non-coalesced embedding kernel.
+
+    Non-optimal approach for comparison:
+    - 2D grid: (batch*seq, embed_dim)
+    - More complex indexing
+    - Potentially worse memory access patterns
+    """
+
+    # 2D grid indexing
+    batch = Int(block_idx.x * block_dim.x + thread_idx.x)
+    seq = Int(block_idx.y * block_dim.y + thread_idx.y)
+    embed = Int(block_idx.z * block_dim.z + thread_idx.z)
+    total_positions = batch_size * seq_len
+
+    if batch >= batch_size or seq >= seq_len or embed >= embed_dim:
+        return
+
+       
+    token_idx = indices[batch, seq]
+    
+    # Assignment with 2D grid pattern
+    # FILL IN 4 lines
+    if token_idx < vocab_size:
+        output[batch, seq, embed] = weights[token_idx, embed]
+    else:
+        output[batch, seq, embed] = 0
+
+    
 import compiler
 from runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
@@ -272,6 +315,94 @@ struct Embedding2DCustomOp:
                 weights_tensor,
                 grid_dim=(blocks_x, blocks_y),
                 block_dim=(BLOCK_X, BLOCK_Y),
+            )
+
+        elif target == "cpu":
+            # Same CPU fallback as 1D version
+            for batch in range(batch_size):
+                for seq in range(seq_len):
+                    token_idx_val = Int(indices_tensor[batch, seq])
+                    if token_idx_val >= 0 and token_idx_val < vocab_size:
+                        for emb in range(embed_dim):
+                            output_tensor[batch, seq, emb] = weights_tensor[
+                                token_idx_val, emb
+                            ]
+        else:
+            raise Error("Unsupported target: " + target)
+        
+@compiler.register("embedding_3d")
+struct Embedding3DCustomOp:
+    @staticmethod
+    fn execute[
+        target: StaticString,
+        batch_size: Int,
+        seq_len: Int,
+        vocab_size: Int,
+        embed_dim: Int,
+    ](
+        output: OutputTensor[
+            dtype = DType.float32, rank=3
+        ],  # [batch_size, seq_len, embed_dim]
+        indices: InputTensor[
+            dtype = DType.int32, rank=2
+        ],  # [batch_size, seq_len]
+        weights: InputTensor[
+            dtype = output.dtype, rank=2
+        ],  # [vocab_size, embed_dim]
+        ctx: DeviceContextPtr,
+    ) raises:
+        output_tensor = output.to_layout_tensor()
+        indices_tensor = indices.to_layout_tensor()
+        weights_tensor = weights.to_layout_tensor()
+
+        comptime indices_layout = indices_tensor.layout
+        comptime weights_layout = weights_tensor.layout
+        comptime out_layout = output_tensor.layout
+
+        @parameter
+        if target == "gpu":
+            gpu_ctx = ctx.get_device_context()
+
+            # Zero out output tensor
+            gpu_ctx.enqueue_memset(
+                DeviceBuffer[output.dtype](
+                    gpu_ctx,
+                    output_tensor.ptr,
+                    batch_size * seq_len * embed_dim,
+                    owning=False,
+                ),
+                0,
+            )
+
+            # Calculate 2D grid dimensions for non-coalesced access
+            # total_positions = batch_size * seq_len
+            comptime BLOCK_X = 16  # batch*seq dimension
+            comptime BLOCK_Y = 16  # seq dimension
+            comptime BLOCK_Z = 16  # embed dimension
+            blocks_x = max(1, ceildiv(batch_size, BLOCK_X))
+            blocks_y = max(1, ceildiv(seq_len, BLOCK_Y))
+            blocks_z = max(1, ceildiv(embed_dim, BLOCK_Z))
+
+            # Compile and launch 2D kernel
+            comptime kernel = embedding_kernel_3d[
+                indices_layout,
+                weights_layout,
+                out_layout,
+                batch_size,
+                seq_len,
+                vocab_size,
+                embed_dim,
+                output.dtype,
+            ]
+            compiled_kernel = gpu_ctx.compile_function[kernel, kernel]()
+
+            gpu_ctx.enqueue_function(
+                compiled_kernel,
+                output_tensor,
+                indices_tensor,
+                weights_tensor,
+                grid_dim=(blocks_x, blocks_y, blocks_z),
+                block_dim=(BLOCK_X, BLOCK_Y, BLOCK_Z),
             )
 
         elif target == "cpu":
