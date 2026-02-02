@@ -146,15 +146,16 @@ fn layernorm_kernel[
         sq_sum += x * x
 
     comptime EPSILON = 1e-5
-    mean  = sum_val / hidden_dim
+    mean = sum_val / hidden_dim
     sig_sq = sq_sum / hidden_dim - mean * mean
 
     gamma = ln_weight[hidden_idx]
     beta = ln_bias[hidden_idx]
     x = rebind[Scalar[dtype]](input[batch_idx, seq_idx, hidden_idx])
-    normalized_input = gamma * (x - mean) / sqrt(sig_sq + EPSILON)
+    normalized_input = gamma * (x - mean) / sqrt(sig_sq + EPSILON) + beta
 
     output[batch_idx, seq_idx, hidden_idx] = normalized_input
+
 
 # ANCHOR_END: layernorm_kernel
 
@@ -262,12 +263,36 @@ fn minimal_fused_kernel[
         return
 
     # Step 1: Compute LayerNorm statistics once per sequence position
+    var sum_val: Scalar[dtype] = 0
+    var sq_sum: Scalar[dtype] = 0
 
-    # FILL IN roughly 10 lines
+    for i in range(hidden_dim):
+        x = rebind[Scalar[dtype]](input[batch_idx, seq_idx, i])
+        sum_val += x
+        sq_sum += x * x
+
+    comptime EPSILON = 1e-5
+    mean = sum_val / hidden_dim
+    sig_sq = sq_sum / hidden_dim - mean * mean
 
     # Step 2: Compute all outputs for this sequence position
+    for output_idx in range(output_dim):
+        dot_p_result: Scalar[dtype] = 0
 
-    # FILL IN roughly 10 lines
+        for i in range(hidden_dim):
+            gamma = ln_weight[i]
+            beta = ln_bias[i]
+            x = rebind[Scalar[dtype]](input[batch_idx, seq_idx, i])
+            normalized_input = (
+                gamma * (x - mean) / sqrt(sig_sq + EPSILON) + beta
+            )
+            dot_p_result += rebind[Scalar[dtype]](
+                normalized_input * linear_weight[output_idx, i]
+            )
+
+        output[batch_idx, seq_idx, output_idx] = (
+            dot_p_result + linear_bias[output_idx]
+        )
 
 
 # ANCHOR_END: minimal_fused_forward_kernel
