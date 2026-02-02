@@ -176,9 +176,9 @@ fn benchmark_3d(mut b: Bencher) raises:
     )
 
     # Using 8x8x8 to stay within 1024 threads limit
-    comptime BLOCK_X = 16
-    comptime BLOCK_Y = 8
-    comptime BLOCK_Z = 8
+    comptime BLOCK_X = 1
+    comptime BLOCK_Y = 1
+    comptime BLOCK_Z = 256
     var blocks_x = max(1, ceildiv(BATCH_SIZE, BLOCK_X))
     var blocks_y = max(1, ceildiv(SEQ_LEN, BLOCK_Y))
     var blocks_z = max(1, ceildiv(EMBED_DIM, BLOCK_Z))

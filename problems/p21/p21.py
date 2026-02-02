@@ -1,4 +1,3 @@
-import time
 import torch
 from pathlib import Path
 from max.torch import CustomOpLibrary
@@ -148,7 +147,6 @@ if __name__ == "__main__":
     print("-" * 60)
 
     import subprocess
-    import sys
     
     benchmark_file = Path(__file__).parent / "bench_embedding.mojo"
     
