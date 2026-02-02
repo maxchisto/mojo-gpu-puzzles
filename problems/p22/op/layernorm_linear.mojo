@@ -140,7 +140,21 @@ fn layernorm_kernel[
     var sq_sum: Scalar[dtype] = 0
 
     # FILL ME IN (roughly 11 lines)
+    for i in range(hidden_dim):
+        x = rebind[Scalar[dtype]](input[batch_idx, seq_idx, i])
+        sum_val += x
+        sq_sum += x * x
 
+    comptime EPSILON = 1e-5
+    mean  = sum_val / hidden_dim
+    sig_sq = sq_sum / hidden_dim - mean * mean
+
+    gamma = ln_weight[hidden_idx]
+    beta = ln_bias[hidden_idx]
+    x = rebind[Scalar[dtype]](input[batch_idx, seq_idx, hidden_idx])
+    normalized_input = gamma * (x - mean) / sqrt(sig_sq + EPSILON)
+
+    output[batch_idx, seq_idx, hidden_idx] = normalized_input
 
 # ANCHOR_END: layernorm_kernel
 
