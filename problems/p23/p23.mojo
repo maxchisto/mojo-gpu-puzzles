@@ -2,7 +2,7 @@ from gpu import thread_idx, block_dim, block_idx, barrier
 from gpu.host import DeviceContext
 from gpu.host.compile import get_gpu_target
 from layout import Layout, LayoutTensor
-from utils import IndexList
+from utils import IndexList, Index
 from math import log2
 from algorithm.functional import elementwise, vectorize
 from sys import simd_width_of, argv, align_of
@@ -33,6 +33,10 @@ fn elementwise_add[
         idx = indices[0]
         print("idx:", idx)
         # FILL IN (2 to 4 lines)
+        a_simd = a.aligned_load[simd_width](Index(idx))
+        b_simd = b.aligned_load[simd_width](Index(idx))
+        res = a_simd + b_simd
+        output.store[simd_width](Index(idx), res)
 
     elementwise[add, SIMD_WIDTH, target="gpu"](a.size(), ctx)
 
