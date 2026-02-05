@@ -117,6 +117,12 @@ fn manual_vectorized_tiled_elementwise_add[
         b_tile = b.tile[chunk_size](tile_id)
 
         # FILL IN (7 lines at most)
+        for i in range(0, tile_size):
+            global_idx = tile_id * chunk_size + i * simd_width
+            a_simd = a_tile.aligned_load[simd_width](Index(global_idx))
+            b_simd = b_tile.aligned_load[simd_width](Index(global_idx))
+            res = a_simd + b_simd
+            output_tile.store[simd_width](Index(global_idx), res)
 
     # Number of tiles needed: each tile processes chunk_size elements
     num_tiles = (size + chunk_size - 1) // chunk_size
@@ -163,6 +169,18 @@ fn vectorize_within_tiles_elementwise_add[
             "actual_tile_size:",
             actual_tile_size,
         )
+
+        fn vectorized_add[
+            width: Int
+        ](i: Int) unified {read tile_start, read a, read b, mut output} -> None:
+            idx = tile_start + i
+            if idx + width <= size:
+                a_simd = a.aligned_load[width](Index(idx))
+                b_simd = b.aligned_load[width](Index(idx))
+                res = a_simd + b_simd
+                output.store[width](Index(idx), res)
+
+        vectorize[simd_width](actual_tile_size, vectorized_add)
 
         # FILL IN (9 lines at most)
 
