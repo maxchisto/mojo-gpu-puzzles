@@ -5,7 +5,7 @@ from gpu.memory import AddressSpace
 from gpu.primitives.warp import sum as warp_sum, WARP_SIZE
 from algorithm.functional import elementwise
 from layout import Layout, LayoutTensor
-from utils import IndexList
+from utils import IndexList, Index
 from sys import argv, simd_width_of, size_of, align_of
 from testing import assert_equal
 from random import random_float64
@@ -81,6 +81,13 @@ fn simple_warp_dot_product[
 ):
     global_i = Int(block_dim.x * block_idx.x + thread_idx.x)
     # FILL IN (6 lines at most)
+    local_dot: a.element_type = 0
+    if global_i < size:
+        local_dot = a[global_i] * b[global_i]
+
+    dot_sum = warp_sum(local_dot)
+    if lane_id() == 0:
+        output[global_i // WARP_SIZE] = dot_sum
 
 
 # ANCHOR_END: simple_warp_kernel
@@ -106,8 +113,19 @@ fn functional_warp_dot_product[
         simd_width: Int, rank: Int, alignment: Int = align_of[dtype]()
     ](indices: IndexList[rank]) capturing -> None:
         idx = indices[0]
-        print("idx:", idx)
+        # print("idx:", idx)
         # FILL IN (10 lines at most)
+        if idx < size:
+            a_i = a.load[1](Index(idx))
+            b_i = b.load[1](Index(idx))
+            local_dot = a_i * b_i
+        else:
+            local_dot = 0
+
+        dot_sum = warp_sum(local_dot)
+
+        if lane_id() == 0:
+            output.store[1](Index(idx // WARP_SIZE), dot_sum)
 
     # Launch exactly size == WARP_SIZE threads (one warp) to process all elements
     elementwise[compute_dot_product, 1, target="gpu"](size, ctx)
@@ -360,7 +378,7 @@ def main():
             ctx.synchronize()
     elif argv()[1] == "--benchmark":
         print("-" * 80)
-        bench_config = BenchConfig(max_iters=10, num_warmup_iters=1)
+        bench_config = BenchConfig(max_iters=40, num_warmup_iters=5)
         bench = Bench(bench_config.copy())
 
         print("Testing SIZE=1 x WARP_SIZE, BLOCKS=1")
