@@ -28,6 +28,9 @@ fn butterfly_pair_swap[
     global_i = Int(block_dim.x * block_idx.x + thread_idx.x)
 
     # FILL ME IN (4 lines)
+    cur = input[global_i]
+    swapped = shuffle_xor(cur, 1)
+    output[global_i] = swapped
 
 
 # ANCHOR_END: butterfly_pair_swap
@@ -50,6 +53,14 @@ fn butterfly_parallel_max[
     global_i = Int(block_dim.x * block_idx.x + thread_idx.x)
 
     # FILL ME IN (roughly 7 lines)
+    offset: UInt32 = WARP_SIZE // 2
+    cur_max = input[global_i]
+    while offset >= 1:
+        partner = shuffle_xor(cur_max, offset)
+        cur_max = max(cur_max, partner)
+        offset /= 2
+
+    output[global_i] = cur_max
 
 
 # ANCHOR_END: butterfly_parallel_max
@@ -77,10 +88,21 @@ fn butterfly_conditional_max[
     lane = lane_id()
 
     if global_i < size:
-        current_val = input[global_i]
-        min_val = current_val
+        min_val = input[global_i]
+        max_val = input[global_i]
+        offset: UInt32 = WARP_SIZE // 2
 
-        # FILL ME IN (roughly 11 lines)
+        while offset >= 1:
+            max_partner = shuffle_xor(max_val, offset)
+            min_partner = shuffle_xor(min_val, offset)
+            max_val = max(max_val, max_partner)
+            min_val = min(min_val, min_partner)
+            offset /= 2
+
+        if global_i % 2 == 0:
+            output[global_i] = max_val
+        else:
+            output[global_i] = min_val
 
 
 # ANCHOR_END: butterfly_conditional_max
@@ -116,6 +138,9 @@ fn warp_inclusive_prefix_sum[
     global_i = Int(block_dim.x * block_idx.x + thread_idx.x)
 
     # FILL ME IN (roughly 4 lines)
+    cur = rebind[Scalar[dtype]](input[global_i])
+    prefix_sum_res = prefix_sum[exclusive=False](cur)
+    output[global_i] = prefix_sum_res
 
 
 # ANCHOR_END: warp_inclusive_prefix_sum
@@ -149,6 +174,25 @@ fn warp_partition[
 
     if global_i < size:
         current_val = input[global_i]
+
+        is_left: Scalar[dtype] = 1 if (current_val < pivot) else 0
+        left_prefix_sum = prefix_sum[exclusive=True](is_left)
+
+        left_partition_size = left_prefix_sum
+        offset = WARP_SIZE // 2
+        while offset >= 1:
+            max_partner = shuffle_xor(left_partition_size, offset)
+            left_partition_size = max(max_partner, left_partition_size)
+            offset /= 2
+
+        if is_left:
+            pos = Int(left_prefix_sum)
+        else:
+            pos = (
+                Int(left_partition_size) + Int(lane_id()) - Int(left_prefix_sum)
+            )
+
+        output[pos] = current_val
 
         # FILL ME IN (roughly 13 lines)
 
