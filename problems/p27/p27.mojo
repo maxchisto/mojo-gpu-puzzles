@@ -78,6 +78,12 @@ fn block_sum_dot_product[
     local_i = thread_idx.x
 
     # FILL IN (roughly 6 lines)
+    if global_i < size:
+        res = a[global_i] * b[global_i]
+        total = block.sum[block_size=TPB](res)
+
+        if global_i == 0:
+            output[0] = total
 
 
 # ANCHOR_END: block_sum_dot_product
@@ -108,25 +114,25 @@ fn block_histogram_bin_extract[
     local_i = Int(thread_idx.x)
 
     # Step 1: Each thread determines its bin and element value
-
-    # FILL IN (roughly 9 lines)
+    cur = input_data[global_i]
+    bin_id = NUM_BINS - 1 if cur == 1.0 else floor(cur * NUM_BINS)
+    bin_id = max(0, Int(bin_id))
 
     # Step 2: Create predicate for target bin extraction
-
-    # FILL IN (roughly 3 line)
+    is_target = 1 if bin_id == target_bin else 0
 
     # Step 3: Use block.prefix_sum() for parallel bin extraction!
     # This computes where each thread should write within the target bin
-
-    # FILL IN (1 line)
+    prefix_sum_res = block.prefix_sum[
+        dtype = DType.int32, block_size=TPB, exclusive=True
+    ](is_target)
 
     # Step 4: Extract and pack elements belonging to target_bin
-
-    # FILL IN (roughly 2 line)
+    if is_target:
+        bin_output[prefix_sum_res] = cur
 
     # Step 5: Final thread computes total count for this bin
-
-    # FILL IN (roughly 3 line)
+    count_output[0] = block.max[block_size=TPB](prefix_sum_res)
 
 
 # ANCHOR_END: block_histogram
@@ -156,25 +162,24 @@ fn block_normalize_vector[
     local_i = thread_idx.x
 
     # Step 1: Each thread loads its element
-
-    # FILL IN (roughly 3 lines)
+    # cur = rebind[Scalar[dtype]](input_data[global_i])
+    cur = input_data[global_i]
 
     # Step 2: Use block.sum() to compute total sum (familiar from earlier!)
-
-    # FILL IN (1 line)
+    sum = block.sum[block_size=TPB](cur)
 
     # Step 3: Thread 0 computes mean value
-
-    # FILL IN (roughly 4 lines)
+    ave: output_data.element_type = 1.0
+    if global_i == 0:
+        ave = sum / size
 
     # Step 4: block.broadcast() shares mean to ALL threads!
     # This completes the block operations trilogy demonstration
-
-    # FILL IN (1 line)
+    shared_ave = block.broadcast[block_size=TPB](ave)
 
     # Step 5: Each thread normalizes by the mean
-
-    # FILL IN (roughly 3 lines)
+    normed = cur / shared_ave
+    output_data[global_i] = normed
 
 
 # ANCHOR_END: block_normalize
